@@ -165,7 +165,7 @@ function frageCsv() {
       #mbx-vorschau td.mbx-geaendert { color: #1f5fbf; font-weight: 600; }
       #mbx-vorschau td.mbx-ohne { color: #b3261e; }
       @media (max-width: 480px) { #mbx-preise { grid-template-columns: 1fr; } }
-      #mbx-merge { display: flex; gap: 8px; align-items: center; margin-top: 12px; font-size: 14px; }
+      #mbx-merge, #mbx-deutsch { display: flex; gap: 8px; align-items: center; margin-top: 12px; font-size: 14px; }
       #mbx-aktionen { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
       #mbx-aktionen button { font: inherit; padding: 8px 16px; border-radius: 6px;
         cursor: pointer; border: 1px solid #c4cad6; background: #fff; color: #1d2330; }
@@ -188,6 +188,8 @@ function frageCsv() {
       </div>
       <label id="mbx-merge"><input type="checkbox" id="mbx-merge-cb" checked>
         Gleiche Karten zusammenfassen (Mengen addieren)</label>
+      <label id="mbx-deutsch"><input type="checkbox" id="mbx-deutsch-cb">
+        Alle Karten sind auf Deutsch (Sprache beim Einstellen auf Deutsch setzen)</label>
       <div id="mbx-preise">
         <div>
           <label for="mbx-minpreis">Mindestpreis</label>
@@ -211,7 +213,7 @@ function frageCsv() {
 
   var $ = id => overlay.querySelector('#' + id);
   var drop = $('mbx-drop'), fileInput = $('mbx-file'), status = $('mbx-status'),
-      vorschau = $('mbx-vorschau'), okBtn = $('mbx-ok'), mergeCb = $('mbx-merge-cb'),
+      vorschau = $('mbx-vorschau'), okBtn = $('mbx-ok'), mergeCb = $('mbx-merge-cb'), deutschCb = $('mbx-deutsch-cb'),
       minInput = $('mbx-minpreis'), einInput = $('mbx-einheitspreis');
   var rohKarten = null;
 
@@ -232,7 +234,10 @@ function frageCsv() {
     if (!rohKarten) return [];
     var e = einstellungen();
     var liste = mergeCb.checked ? zusammenfassen(rohKarten) : rohKarten;
-    return liste.map(k => Object.assign({}, k, { verkaufspreis: berechnePreis(k, e) }));
+    return liste.map(k => Object.assign({}, k, {
+      verkaufspreis: berechnePreis(k, e),
+      verkaufssprache: deutschCb.checked ? 'de' : k.sprache   // Sprache fürs Verkaufsformular
+    }));
   };
 
   function zeigeVorschau() {
@@ -248,9 +253,10 @@ function frageCsv() {
         (ohne ? ' ' + ohne + ' ohne Preis werden übersprungen.' : '');
     vorschau.style.display = 'block';
     vorschau.innerHTML = '<table><thead><tr><th>Name</th><th>Set</th><th>#</th>' +
-      '<th>Foil</th><th>Zustand</th><th>Menge</th><th>Preis</th></tr></thead><tbody>' +
+      '<th>Foil</th><th>Zustand</th><th>Sprache</th><th>Menge</th><th>Preis</th></tr></thead><tbody>' +
       karten.map(k => `<tr><td>${esc(k.name)}</td><td>${esc(k.setCode.toUpperCase())}</td>
         <td>${esc(k.collectorNumber)}</td><td>${esc(k.foil)}</td><td>${esc(k.condition)}</td>
+        <td${k.verkaufssprache !== k.sprache ? ' class="mbx-geaendert"' : ''}>${esc(k.verkaufssprache)}</td>
         <td>${k.menge}</td>${preisZelle(k)}</tr>`).join('') +
       '</tbody></table>';
     okBtn.disabled = !karten.length || ungueltig;
@@ -312,6 +318,7 @@ function frageCsv() {
     }));
     drop.addEventListener('drop', e => ladeDatei(e.dataTransfer.files[0]));
     mergeCb.addEventListener('change', () => { if (rohKarten) zeigeVorschau(); });
+    deutschCb.addEventListener('change', () => { if (rohKarten) zeigeVorschau(); });
     [minInput, einInput].forEach(inp => inp.addEventListener('input', () => {
       if (rohKarten) zeigeVorschau(); else lesePreis(inp);
     }));
@@ -504,8 +511,9 @@ function fuelleFormular(form, k) {
   if (k.proxy)   return 'Proxy – wird nicht verkauft';
   if (k.altered) return 'Altered – Cardmarket verlangt ein Bild';
 
-  var sprache = SPRACHE_ID[String(k.sprache).toLowerCase()];
-  if (!sprache) return 'Sprache „' + k.sprache + '“ gibt es für dieses Produkt nicht';
+  var zielSprache = k.verkaufssprache || k.sprache;   // „Alle auf Deutsch“ → 'de'
+  var sprache = SPRACHE_ID[String(zielSprache).toLowerCase()];
+  if (!sprache) return 'Sprache „' + zielSprache + '“ gibt es für dieses Produkt nicht';
   var zustand = ZUSTAND_ID[String(k.condition).toLowerCase()];
   if (!zustand) return 'Unbekannter Zustand „' + k.condition + '“';
 
@@ -514,7 +522,7 @@ function fuelleFormular(form, k) {
   if (k.menge > max) return 'Menge ' + k.menge + ' über Maximum ' + max;
 
   var sel = feld('idLanguage');
-  if (![...sel.options].some(o => o.value === sprache)) return 'Sprache „' + k.sprache + '“ nicht wählbar';
+  if (![...sel.options].some(o => o.value === sprache)) return 'Sprache „' + zielSprache + '“ nicht wählbar';
 
   setzeFeld(amount, k.menge);
   setzeFeld(sel, sprache);
@@ -639,7 +647,8 @@ var mbxPanel = {
     this.el.querySelector('#mbx-p-karte').innerHTML =
       '<strong>' + mbxEsc(k.name) + '</strong><br>' +
       mbxEsc(k.setName) + ' (' + mbxEsc(k.setCode.toUpperCase()) + ' #' + mbxEsc(k.collectorNumber) + ')' +
-      ' · ' + mbxEsc(k.foil) + ' · ' + mbxEsc(k.condition) + ' · Menge ' + k.menge +
+      ' · ' + mbxEsc(k.foil) + ' · ' + mbxEsc(k.condition) +
+      ' · ' + mbxEsc(k.verkaufssprache || k.sprache) + ' · Menge ' + k.menge +
       ' · ' + (k.verkaufspreis == null ? 'kein Preis' : k.verkaufspreis.toFixed(2) + ' €');
   },
   status(text) { if (this.el) this.el.querySelector('#mbx-p-status').textContent = text; },
